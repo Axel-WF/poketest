@@ -18,6 +18,7 @@ export default defineNuxtConfig({
     typeCheck: true
   },
   app: {
+    baseURL: process.env.NUXT_APP_BASE_URL || '/',
     head: {
       title: 'pokestatdle',
       meta: [
