@@ -1,22 +1,32 @@
 # pokestatdle
 
-pokestatdle is a Nuxt 3 guessing game that asks players to infer Pokemon base stats from external API data. It is intended to work as a feature-rich game first, while still demonstrating TypeScript modeling, Pinia state, API normalization, scoring, local persistence, and performance-aware UI.
+pokestatdle is a Nuxt 3 guessing game where players infer Pokemon base stats from public PokeAPI data. It is a small portfolio project focused on clean TypeScript domain modeling, Pinia state, API normalization, deterministic scoring rules, local browser persistence, and static deployment.
 
-## Project Status
+## Current Status
 
-This repository is in the setup phase. The initial structure is ready for implementation:
+The game is implemented as a static Nuxt app and is configured for GitHub Pages deployment.
 
-- Nuxt 3 + Vue 3 + TypeScript starter configuration
-- Pinia-oriented state boundaries
-- PokeAPI client and mapper layer
-- Domain types for Pokemon profiles, game events, stat questions, and scoring
-- Utility modules for random selection, shuffling, clamping, generation ranges, and scoring
-- GitHub Actions workflow for type checks, linting, tests, and static generation
-- Public repository documentation and contribution hygiene
+Implemented:
 
-## Product Goal
+- Random Pokemon rounds using selected generation pools
+- PokeAPI fetch and response mapping into internal domain models
+- Difficulty modes for easy, medium, and hard rounds
+- Percentage-based stat option generation
+- Rank-based scoring and deviation metrics
+- Round result screen
+- Local browser history for the 10 latest rounds
+- CI checks for type safety, linting, tests, and static generation
+- GitHub Pages deployment after CI succeeds on `main`
 
-The app selects a random Pokemon, normalizes its PokeAPI data into an internal profile, and asks the user to infer six base stats:
+Not yet implemented:
+
+- Full settings page controls
+- Chart-based result visualizations
+- Persistent user preferences beyond in-memory session state
+
+## How The Game Works
+
+The app selects a random Pokemon ID from the active generation pool, fetches the Pokemon profile from PokeAPI, normalizes the response, and asks the player to infer six base stats:
 
 - HP
 - Attack
@@ -25,7 +35,23 @@ The app selects a random Pokemon, normalizes its PokeAPI data into an internal p
 - Special Defense
 - Speed
 
-For each stat, the game generates three controlled options: the real value plus two plausible distractors. Distractors use percentage-based deltas, so low stats get smaller absolute gaps and high stats get larger absolute gaps. The two distractors can both be lower, both be higher, or split around the real value, preventing the real value from always being the numeric middle. After a round, the app calculates score, deviation, accuracy, and performance history.
+For each stat, the game presents three options: the real value plus two plausible distractors. Distractors are generated from percentage-based deltas so low stats get smaller absolute gaps and high stats get larger absolute gaps.
+
+After a round, the app scores each answer:
+
+- Exact answer: 100 points
+- Closest wrong option: 50 points
+- Farthest wrong option: 0 points
+
+The result screen shows total score, accuracy, actual values, selected values, and deviation per stat. Completed rounds are saved in `localStorage`.
+
+## Routes
+
+- `/` - main menu, difficulty selection, generation filters
+- `/play` - active guessing round
+- `/results` - latest round summary
+- `/history` - local round archive and basic performance summary
+- `/settings` - placeholder settings page
 
 ## Tech Stack
 
@@ -34,30 +60,21 @@ For each stat, the game generates three controlled options: the real value plus 
 - TypeScript
 - Pinia
 - Tailwind CSS
-- VueUse
 - Vitest
 - Vue Test Utils
-- Playwright
-- Chart.js or another Vue-compatible charting library
+- GitHub Actions
+- GitHub Pages
 
-## Game Features
+## Requirements
 
-- Classic stat inference rounds
-- Generation pool selection for random Pokemon IDs
-- Percentage-based distractor generation by difficulty
-- Difficulty hints: easy reveals base total and two correct stats, medium reveals base total, hard hides base total
-- Rank-based scoring: exact answers score 100, the closest wrong option scores 50, and the farthest wrong option scores 0
-- Round results with deviation and accuracy metrics
-- Local performance history
-- Settings for difficulty, generation filters, theme, and accessibility
+- Node.js `>=22.0.0`
+- pnpm `>=9.0.0`
 
-## Planned Routes
+The repository pins pnpm through:
 
-- `/` - game entry point
-- `/play` - main game loop
-- `/results` - round summary and charts
-- `/history` - previous rounds and performance analytics
-- `/settings` - difficulty, generations, theme, and accessibility options
+```json
+"packageManager": "pnpm@9.15.4"
+```
 
 ## Development
 
@@ -87,37 +104,85 @@ Generate a static build:
 pnpm generate
 ```
 
-## Testing Strategy
+Preview the generated site:
 
-The first tests should focus on domain logic:
+```bash
+pnpm generate
+npx serve .output/public
+```
+
+## Testing
+
+The current unit tests cover domain logic:
 
 - Stat option generation includes the correct value
 - Generated options are unique
 - Generated options stay inside valid stat ranges
 - Difficulty changes the generated percentage delta range
 - Generated wrong options scale with the actual stat value
-- Scoring rewards exact answers and ranks wrong answers by generated-option deviation
-- PokeAPI mapper normalizes the expected response shape
+- Scoring rewards exact answers
+- Scoring ranks wrong answers by generated-option deviation
+
+## CI/CD
+
+This repository uses two GitHub Actions workflows:
+
+- `CI` runs on pushes and pull requests targeting `main`
+- `Deploy GitHub Pages` runs after `CI` completes successfully on `main`
+
+The CI workflow runs:
+
+```txt
+pnpm install --frozen-lockfile
+pnpm typecheck
+pnpm lint
+pnpm test
+pnpm generate
+```
+
+The deployment workflow builds the static app with:
+
+```txt
+NUXT_APP_BASE_URL=/poketest/
+pnpm generate
+```
+
+Then it uploads `.output/public` to GitHub Pages.
 
 ## Deployment
 
-This app is intended for static deployment through GitHub Pages, Cloudflare Pages, Netlify, or Vercel. The Nuxt config uses static generation defaults so the app can be hosted without a backend server.
+The production deployment target is GitHub Pages:
+
+```txt
+https://Axel-WF.github.io/poketest/
+```
+
+The app uses this Nuxt base URL setting so assets resolve correctly under the repository subpath:
+
+```ts
+app: {
+  baseURL: process.env.NUXT_APP_BASE_URL || '/'
+}
+```
+
+For a different Pages repository name, update `NUXT_APP_BASE_URL` in `.github/workflows/deploy-pages.yml`.
+
+## Environment Variables
+
+The app uses the public PokeAPI endpoint by default:
+
+```txt
+NUXT_PUBLIC_POKEAPI_BASE_URL=https://pokeapi.co/api/v2
+```
+
+No private API keys are required.
 
 ## Security And Reliability Notes
 
-- No API keys are required or exposed
-- External API data is normalized before use
-- Components should not depend on raw PokeAPI responses
-- User-submitted HTML is not rendered
-- Error states should avoid leaking technical stack traces
-- Strict TypeScript should prevent invalid game states where practical
+- No secrets are required for local development or deployment
+- `.env` files are ignored by Git
+- PokeAPI responses are normalized before reaching page components
+- Components do not render untrusted HTML
+- Round history is stored only in the user's browser
+- GitHub Pages serves the app as static files with no backend server
 
-## Roadmap
-
-- Build the game store and event dispatcher
-- Implement PokeAPI caching and prefetching
-- Build the main play experience
-- Add results charts and history analytics
-- Add settings for difficulty and generation filters
-- Add unit and component tests
-- Polish responsive UI, accessibility, and deployment docs
