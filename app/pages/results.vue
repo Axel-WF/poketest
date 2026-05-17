@@ -1,19 +1,10 @@
 <script setup lang="ts">
-import type { StatKey } from '../types/pokemon'
-import type { RoundResult, StatGuessResult } from '../types/scoring'
+import { statOrder } from '../constants/stats'
+import type { RoundResult } from '../types/scoring'
+import { formatPercent } from '../utils/formatting'
 
 const game = useGameStore()
 const history = useHistoryStore()
-
-const statOrder: StatKey[] = ['hp', 'attack', 'defense', 'specialAttack', 'specialDefense', 'speed']
-const statLabels: Record<StatKey, string> = {
-  hp: 'HP',
-  attack: 'Attack',
-  defense: 'Defense',
-  specialAttack: 'Sp. Attack',
-  specialDefense: 'Sp. Defense',
-  speed: 'Speed'
-}
 
 const result = computed<RoundResult | null>(() => game.currentResult ?? history.rounds.at(-1) ?? null)
 const orderedGuesses = computed(() => {
@@ -26,20 +17,6 @@ const scorePercent = computed(() => {
   if (!result.value || result.value.maxScore === 0) return 0
   return Math.round((result.value.totalScore / result.value.maxScore) * 100)
 })
-
-function formatPercent(value: number): string {
-  return `${Math.round(value * 100)}%`
-}
-
-function labelClass(label: StatGuessResult['label']): string {
-  const classes: Record<StatGuessResult['label'], string> = {
-    exact: 'border-2 border-[#17130f] bg-[#ffcf33] text-[#17130f]',
-    near: 'border-2 border-[#17130f] bg-[#efe4d0] text-[#17130f]',
-    miss: 'border-2 border-[#17130f] bg-[#c7352e] text-white'
-  }
-
-  return classes[label]
-}
 </script>
 
 <template>
@@ -52,44 +29,12 @@ function labelClass(label: StatGuessResult['label']): string {
           {{ result.totalScore }} of {{ result.maxScore }} points
         </p>
 
-        <div class="mt-6 rounded-md border-2 border-[#17130f] bg-white p-4">
-          <div class="flex items-center justify-between gap-4">
-            <div>
-              <p class="text-xs font-black uppercase tracking-[0.18em] text-[#6f6252]">Pokemon ID</p>
-              <p class="text-2xl font-black">#{{ result.pokemon.id }}</p>
-            </div>
-            <div class="rounded-md bg-[#ffcf33] px-3 py-2 text-sm font-black uppercase">
-              {{ formatPercent(result.accuracy) }}
-            </div>
-          </div>
-
-          <div class="mt-4 grid place-items-center rounded-md bg-[#e9f2ff] p-4">
-            <img
-              v-if="result.pokemon.spriteUrl"
-              :src="result.pokemon.spriteUrl"
-              :alt="result.pokemon.name"
-              class="h-44 w-44 object-contain drop-shadow-xl"
-            >
-            <div v-else class="grid h-44 w-44 place-items-center rounded-full bg-[#d8cfbd] text-sm font-bold">
-              No sprite
-            </div>
-          </div>
-
-          <h2 class="mt-4 text-3xl font-black">{{ result.pokemon.name }}</h2>
-          <p v-if="result.pokemon.formName" class="mt-1 text-sm font-bold text-[#6f6252]">
-            Form: {{ result.pokemon.formName }}
-          </p>
-
-          <div class="mt-4 flex flex-wrap gap-2">
-            <span
-              v-for="type in result.pokemon.types"
-              :key="type"
-              class="rounded-full border-2 border-[#17130f] bg-[#ffcf33] px-3 py-1 text-xs font-black uppercase"
-            >
-              {{ type }}
-            </span>
-          </div>
-        </div>
+        <PokemonSummaryCard
+          class="mt-6"
+          :pokemon="result.pokemon"
+          secondary-label="Accuracy"
+          :secondary-value="formatPercent(result.accuracy)"
+        />
 
         <div class="mt-5 grid grid-cols-2 gap-3">
           <div class="rounded-md border-2 border-[#17130f] bg-[#17130f] p-4 text-white">
@@ -128,56 +73,11 @@ function labelClass(label: StatGuessResult['label']): string {
         </div>
 
         <div class="grid gap-4 pt-6">
-          <article
+          <StatGuessResultCard
             v-for="guess in orderedGuesses"
             :key="guess.stat"
-            class="rounded-md border-2 border-[#17130f] bg-[#fffaf0] p-4"
-          >
-            <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
-              <div>
-                <div class="flex flex-wrap items-center gap-2">
-                  <h3 class="text-xl font-black">{{ statLabels[guess.stat] }}</h3>
-                  <span
-                    class="rounded-full px-3 py-1 text-xs font-black uppercase"
-                    :class="labelClass(guess.label)"
-                  >
-                    {{ guess.label }}
-                  </span>
-                </div>
-                <p class="mt-2 text-sm font-bold text-[#6f6252]">
-                  You guessed {{ guess.selectedValue }}. Actual value was {{ guess.actualValue }}.
-                </p>
-              </div>
-
-              <div class="grid grid-cols-3 gap-2 text-center md:min-w-72">
-                <div class="rounded-md border-2 border-[#17130f] bg-[#ffcf33] px-3 py-2">
-                  <p class="text-xs font-black uppercase text-[#6f6252]">Guess</p>
-                  <p class="text-2xl font-black">{{ guess.selectedValue }}</p>
-                </div>
-                <div class="rounded-md border-2 border-[#17130f] bg-white px-3 py-2">
-                  <p class="text-xs font-black uppercase text-[#6f6252]">Actual</p>
-                  <p class="text-2xl font-black">{{ guess.actualValue }}</p>
-                </div>
-                <div class="rounded-md border-2 border-[#17130f] bg-[#17130f] px-3 py-2 text-white">
-                  <p class="text-xs font-black uppercase text-[#ffcf33]">Points</p>
-                  <p class="text-2xl font-black">{{ guess.points }}</p>
-                </div>
-              </div>
-            </div>
-
-            <div class="mt-4">
-              <div class="mb-2 flex items-center justify-between text-xs font-black uppercase tracking-wide text-[#6f6252]">
-                <span>Deviation {{ guess.absoluteDeviation }}</span>
-                <span>{{ formatPercent(guess.percentageDeviation) }}</span>
-              </div>
-              <div class="h-3 overflow-hidden rounded-full border-2 border-[#17130f] bg-white">
-                <div
-                  class="h-full bg-[#c7352e]"
-                  :style="{ width: `${Math.min(100, Math.round(guess.percentageDeviation * 100))}%` }"
-                />
-              </div>
-            </div>
-          </article>
+            :guess="guess"
+          />
         </div>
       </section>
     </section>

@@ -1,131 +1,24 @@
 <script setup lang="ts">
-import type { StatQuestion } from '../types/game'
-import type { PokemonProfile, StatKey } from '../types/pokemon'
-import { scoreRound } from '../utils/scoring'
-import { shuffle } from '../utils/shuffle'
-
-const settings = useSettingsStore()
-const game = useGameStore()
-const cache = usePokemonCacheStore()
-const history = useHistoryStore()
-const { getPokemonProfile } = usePokemonApi()
-const { pickRandomPokemonId } = useGameRound()
-const { createQuestions } = useStatOptions()
-
-const isLoading = ref(true)
-const errorMessage = ref<string | null>(null)
-const selectedAnswers = ref<Partial<Record<StatKey, number>>>({})
-const assistedStats = ref<StatKey[]>([])
-const isSubmittingResults = ref(false)
-
-const statLabels: Record<StatKey, string> = {
-  hp: 'HP',
-  attack: 'Attack',
-  defense: 'Defense',
-  specialAttack: 'Sp. Attack',
-  specialDefense: 'Sp. Defense',
-  speed: 'Speed'
-}
-
-const pokemon = computed(() => game.currentPokemon)
-const questions = computed(() => game.questions)
-const selectedCount = computed(() => Object.keys(selectedAnswers.value).length)
-const roundComplete = computed(() => questions.value.length > 0 && selectedCount.value === questions.value.length)
-const shouldShowBaseTotal = computed(() => settings.difficulty !== 'hard')
+const {
+  settings,
+  isLoading,
+  errorMessage,
+  selectedAnswers,
+  assistedStats,
+  isSubmittingResults,
+  pokemon,
+  questions,
+  selectedCount,
+  roundComplete,
+  shouldShowBaseTotal,
+  startRound,
+  selectAnswer,
+  revealResults
+} = usePlayRound()
 
 onMounted(() => {
   void startRound()
 })
-
-async function startRound(): Promise<void> {
-  isLoading.value = true
-  errorMessage.value = null
-  selectedAnswers.value = {}
-  assistedStats.value = []
-  isSubmittingResults.value = false
-  game.resetRound()
-
-  const pokemonId = pickRandomPokemonId(settings.selectedGenerations)
-  game.recordEvent({ type: 'ROUND_STARTED', payload: { pokemonId } })
-  game.recordEvent({ type: 'POKEMON_REQUESTED', payload: { pokemonId } })
-
-  try {
-    const profile = await loadPokemonProfile(pokemonId)
-    const generatedQuestions = createQuestions(profile.stats, settings.difficulty)
-
-    game.currentPokemon = profile
-    game.questions = generatedQuestions
-    game.recordEvent({ type: 'POKEMON_FETCHED', payload: { pokemon: profile } })
-    game.recordEvent({ type: 'OPTIONS_GENERATED', payload: { questions: generatedQuestions } })
-
-    applyDifficultyAssists(generatedQuestions)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'Could not load Pokemon data.'
-    errorMessage.value = message
-    game.recordEvent({ type: 'POKEMON_FETCH_FAILED', payload: { pokemonId, message } })
-  } finally {
-    isLoading.value = false
-  }
-}
-
-async function loadPokemonProfile(pokemonId: number): Promise<PokemonProfile> {
-  const cached = cache.get(pokemonId)
-  if (cached) return cached
-
-  cache.trackRequest()
-  const profile = await getPokemonProfile(pokemonId)
-  cache.set(profile)
-
-  return profile
-}
-
-function selectAnswer(question: StatQuestion, selectedValue: number): void {
-  if (assistedStats.value.includes(question.stat)) return
-
-  selectedAnswers.value = {
-    ...selectedAnswers.value,
-    [question.stat]: selectedValue
-  }
-
-  game.answerStat({
-    stat: question.stat,
-    selectedValue
-  })
-}
-
-function applyDifficultyAssists(generatedQuestions: StatQuestion[]): void {
-  if (settings.difficulty !== 'easy') return
-
-  const assistedQuestions = shuffle(generatedQuestions).slice(0, 2)
-  assistedStats.value = assistedQuestions.map((question) => question.stat)
-
-  selectedAnswers.value = assistedQuestions.reduce<Partial<Record<StatKey, number>>>((answers, question) => {
-    answers[question.stat] = question.actualValue
-    return answers
-  }, {})
-
-  for (const question of assistedQuestions) {
-    game.answerStat({
-      stat: question.stat,
-      selectedValue: question.actualValue
-    })
-  }
-}
-
-async function revealResults(): Promise<void> {
-  if (!pokemon.value || !roundComplete.value || isSubmittingResults.value) return
-
-  isSubmittingResults.value = true
-  const result = scoreRound(pokemon.value, game.answers, game.questions)
-  game.currentResult = result
-  history.addRound(result)
-  game.recordEvent({ type: 'ROUND_COMPLETED' })
-  game.recordEvent({ type: 'SCORE_CALCULATED', payload: { result } })
-  game.recordEvent({ type: 'HISTORY_PERSISTED', payload: { resultId: result.id } })
-
-  await navigateTo('/results')
-}
-
 </script>
 
 <template>
@@ -172,44 +65,7 @@ async function revealResults(): Promise<void> {
         </div>
 
         <div v-else-if="pokemon" class="mt-7">
-          <div class="rounded-md border-2 border-[#17130f] bg-white p-4">
-            <div class="flex items-center justify-between gap-4">
-              <div>
-                <p class="text-xs font-black uppercase tracking-[0.18em] text-[#6f6252]">Pokemon ID</p>
-                <p class="text-2xl font-black">#{{ pokemon.id }}</p>
-              </div>
-              <div class="text-right">
-                <p class="text-xs font-black uppercase tracking-[0.18em] text-[#6f6252]">Difficulty</p>
-                <p class="text-lg font-black capitalize">{{ settings.difficulty }}</p>
-              </div>
-            </div>
-
-            <div class="mt-4 grid place-items-center rounded-md bg-[#e9f2ff] p-4">
-              <img
-                v-if="pokemon.spriteUrl"
-                :src="pokemon.spriteUrl"
-                :alt="pokemon.name"
-                class="h-44 w-44 object-contain drop-shadow-xl"
-              >
-              <div v-else class="grid h-44 w-44 place-items-center rounded-full bg-[#d8cfbd] text-sm font-bold">
-                No sprite
-              </div>
-            </div>
-
-            <h2 class="mt-4 text-3xl font-black">{{ pokemon.name }}</h2>
-            <p v-if="pokemon.formName" class="mt-1 text-sm font-bold text-[#6f6252]">Form: {{ pokemon.formName }}</p>
-
-            <div class="mt-4 flex flex-wrap gap-2">
-              <span
-                v-for="type in pokemon.types"
-                :key="type"
-                class="rounded-full border-2 border-[#17130f] bg-[#ffcf33] px-3 py-1 text-xs font-black uppercase"
-              >
-                {{ type }}
-              </span>
-            </div>
-          </div>
-
+          <PokemonSummaryCard :pokemon="pokemon" secondary-label="Difficulty" :secondary-value="settings.difficulty" />
           <div class="mt-5 grid grid-cols-2 gap-3">
             <div class="rounded-md border-2 border-[#17130f] bg-[#17130f] p-4 text-white">
               <p class="text-xs font-black uppercase tracking-wide text-[#ffcf33]">Answered</p>
@@ -239,51 +95,14 @@ async function revealResults(): Promise<void> {
         </div>
 
         <div v-else-if="pokemon && questions.length > 0" class="grid gap-4 pt-6 md:grid-cols-2">
-          <article
+          <StatQuestionCard
             v-for="question in questions"
             :key="question.stat"
-            class="rounded-md border-2 border-[#17130f] bg-[#fffaf0] p-4"
-          >
-            <div class="flex items-center justify-between gap-3">
-              <h3 class="text-xl font-black">{{ statLabels[question.stat] }}</h3>
-              <span
-                v-if="assistedStats.includes(question.stat)"
-                class="rounded-full bg-[#ffcf33] px-3 py-1 text-xs font-black uppercase text-[#17130f]"
-              >
-                Given
-              </span>
-              <span
-                v-else-if="selectedAnswers[question.stat] !== undefined"
-                class="rounded-full bg-[#dff6dd] px-3 py-1 text-xs font-black uppercase text-[#1e6d32]"
-              >
-                Locked
-              </span>
-              <span v-else class="rounded-full bg-[#efe4d0] px-3 py-1 text-xs font-black uppercase text-[#6f6252]">
-                Open
-              </span>
-            </div>
-
-            <div class="mt-4 grid grid-cols-3 gap-2">
-              <button
-                v-for="option in question.options"
-                :key="option"
-                type="button"
-                class="rounded-md border-2 border-[#17130f] px-3 py-4 text-lg font-black shadow-[3px_3px_0_#17130f] transition hover:-translate-y-0.5 focus:outline-none focus:ring-4 focus:ring-[#ffcf33]/40"
-                :class="
-                  selectedAnswers[question.stat] === option
-                    ? 'bg-[#ffcf33]'
-                    : assistedStats.includes(question.stat)
-                      ? 'bg-[#efe4d0] opacity-60'
-                      : 'bg-white hover:bg-[#f7f3ea]'
-                "
-                :disabled="assistedStats.includes(question.stat)"
-                :aria-pressed="selectedAnswers[question.stat] === option"
-                @click="selectAnswer(question, option)"
-              >
-                {{ option }}
-              </button>
-            </div>
-          </article>
+            :question="question"
+            :selected-value="selectedAnswers[question.stat]"
+            :assisted-stats="assistedStats"
+            @select="selectAnswer"
+          />
         </div>
 
         <div v-else class="pt-6">
